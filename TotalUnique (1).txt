@@ -1,0 +1,70 @@
+<form>
+  <label>Total # of Users Logged in per Day</label>
+
+  <!-- Base search reused by both panels -->
+  <search id="baseSearch">
+    <query><![CDATA[
+sourcetype="appstream_session" UserId=*
+| eval StartTimeEpoch = case(
+    isnum(StartTime), StartTime,
+    match(StartTime, "^\d{4}-\d{2}-\d{2}T"), strptime(StartTime, "%Y-%m-%dT%H:%M:%S.%Q%Z"),
+    match(StartTime, "^\d{4}-\d{2}-\d{2}\s"), strptime(StartTime, "%Y-%m-%d %H:%M:%S"),
+    true(), null()
+)
+| eval _time = coalesce(StartTimeEpoch, _time)
+    ]]></query>
+    <earliest>$time.earliest$</earliest>
+    <latest>$time.latest$</latest>
+  </search>
+
+  <!-- Time picker -->
+  <fieldset submitButton="false">
+    <input type="time" token="time" searchWhenChanged="true">
+      <label>Time Range</label>
+      <default>
+        <earliest>-24h@h</earliest>
+        <latest>now</latest>
+      </default>
+    </input>
+  </fieldset>
+
+  <!-- Panel 1: Unique users per day (List) -->
+  <row>
+    <panel>
+      <title>Unique Users per Day (List)</title>
+      <table>
+        <search base="baseSearch">
+          <query><![CDATA[
+| bin _time span=1d
+| stats dc(UserId) as "Unique users" values(UserId) as users by _time
+| sort 0 _time
+| eval Day=strftime(_time, "%a %b %d, %Y")
+| eval "User list"=mvjoin(mvsort(users), ", ")
+| table Day "Unique users" "User list"
+          ]]></query>
+        </search>
+        <option name="wrap">true</option>
+        <option name="count">50</option>
+      </table>
+    </panel>
+  </row>
+
+  <!-- Panel 2: All Unique Users -->
+  <row>
+    <panel>
+      <title>All Unique Users in Selected Time Range</title>
+      <table>
+        <search base="baseSearch">
+          <query><![CDATA[
+| rex field=UserId "(?P<UserName>[^@]+)"
+| dedup UserName
+| sort 0 UserName
+| table UserName
+          ]]></query>
+        </search>
+        <option name="count">100</option>
+      </table>
+    </panel>
+  </row>
+
+</form>
