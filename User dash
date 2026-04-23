@@ -249,3 +249,132 @@ eventName=ConsoleLogin responseElements.ConsoleLogin=Success
     </panel>
   </row>
 </form>
+
+========================================================================
+
+<form version="1.1" theme="light">
+  <label>R2D2_Solo User login Dashboard2</label>
+  <description>Console login dashboard by account and user, based on CloudTrail ConsoleLogin success events.</description>
+
+  <fieldset submitButton="true" autoRun="false">
+    <input type="time" token="time_tok" searchWhenChanged="false">
+      <label>Time Range</label>
+      <default>
+        <earliest>-30d@d</earliest>
+        <latest>now</latest>
+      </default>
+    </input>
+
+    <input type="multiselect" token="selected_account" searchWhenChanged="false">
+      <label>Account</label>
+      <choice value="_all_">All Accounts</choice>
+      <default>_all_</default>
+      <valuePrefix>"</valuePrefix>
+      <valueSuffix>"</valueSuffix>
+      <delimiter>,</delimiter>
+      <fieldForLabel>recipientAccountId</fieldForLabel>
+      <fieldForValue>recipientAccountId</fieldForValue>
+      <search>
+        <query>
+index=aws-cloudtrail-fdns sourcetype=aws:cloudtrail
+eventName=ConsoleLogin responseElements.ConsoleLogin=Success
+| dedup recipientAccountId
+| sort recipientAccountId
+| table recipientAccountId
+        </query>
+        <earliest>$time_tok.earliest$</earliest>
+        <latest>$time_tok.latest$</latest>
+      </search>
+    </input>
+
+    <input type="dropdown" token="selected_user" searchWhenChanged="false">
+      <label>User</label>
+      <choice value="_all_">All Users</choice>
+      <default>_all_</default>
+      <fieldForLabel>login_user</fieldForLabel>
+      <fieldForValue>login_user</fieldForValue>
+      <search>
+        <query>
+index=aws-cloudtrail-fdns sourcetype=aws:cloudtrail
+eventName=ConsoleLogin responseElements.ConsoleLogin=Success
+| eval principal='userIdentity.principalId'
+| eval login_user=mvindex(split(principal, ":"), 1)
+| where isnotnull(login_user) AND login_user!=""
+| where "$selected_account$"="_all_" OR recipientAccountId IN ($selected_account$)
+| dedup login_user
+| sort login_user
+| table login_user
+        </query>
+        <earliest>$time_tok.earliest$</earliest>
+        <latest>$time_tok.latest$</latest>
+      </search>
+    </input>
+  </fieldset>
+
+  <row>
+    <panel>
+      <title>Console Login Summary</title>
+      <table>
+        <search>
+          <query>
+index=aws-cloudtrail-fdns sourcetype=aws:cloudtrail
+eventName=ConsoleLogin responseElements.ConsoleLogin=Success
+| eval principal='userIdentity.principalId'
+| eval arn='userIdentity.arn'
+| eval login_user=mvindex(split(principal, ":"), 1)
+| where isnotnull(login_user) AND login_user!=""
+| where "$selected_account$"="_all_" OR recipientAccountId IN ($selected_account$)
+| where "$selected_user$"="_all_" OR login_user="$selected_user$"
+| stats
+    earliest(_time) as first_login
+    latest(_time) as last_login
+    count as login_count
+    values(sourceIPAddress) as source_ip
+    values(additionalEventData.MFAUsed) as mfa_used
+    values(userIdentity.type) as user_type
+    values(principal) as principal_id
+    values(arn) as arn
+    by recipientAccountId login_user
+| eval first_login=strftime(first_login, "%Y-%m-%d %H:%M:%S")
+| eval last_login=strftime(last_login, "%Y-%m-%d %H:%M:%S")
+| table recipientAccountId login_user user_type source_ip mfa_used first_login last_login login_count principal_id arn
+| sort recipientAccountId login_user
+          </query>
+          <earliest>$time_tok.earliest$</earliest>
+          <latest>$time_tok.latest$</latest>
+        </search>
+        <option name="count">20</option>
+        <option name="drilldown">row</option>
+        <option name="refresh.display">progressbar</option>
+      </table>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
+      <title>Individual Console Login Events</title>
+      <table>
+        <search>
+          <query>
+index=aws-cloudtrail-fdns sourcetype=aws:cloudtrail
+eventName=ConsoleLogin responseElements.ConsoleLogin=Success
+| eval principal='userIdentity.principalId'
+| eval arn='userIdentity.arn'
+| eval login_user=mvindex(split(principal, ":"), 1)
+| where isnotnull(login_user) AND login_user!=""
+| where "$selected_account$"="_all_" OR recipientAccountId IN ($selected_account$)
+| where "$selected_user$"="_all_" OR login_user="$selected_user$"
+| eval login_time=strftime(_time, "%Y-%m-%d %H:%M:%S")
+| table login_time recipientAccountId login_user userIdentity.type sourceIPAddress additionalEventData.MFAUsed principal arn
+| sort - login_time
+          </query>
+          <earliest>$time_tok.earliest$</earliest>
+          <latest>$time_tok.latest$</latest>
+        </search>
+        <option name="count">20</option>
+        <option name="drilldown">row</option>
+        <option name="refresh.display">progressbar</option>
+      </table>
+    </panel>
+  </row>
+</form>
